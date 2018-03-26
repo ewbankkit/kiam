@@ -57,9 +57,9 @@ func main() {
 	kingpin.Flag("session-duration", "Requested session duration for STS Tokens.").Default("15m").DurationVar(&serverConfig.SessionDuration)
 	kingpin.Flag("assume-role-arn", "IAM Role to assume before processing requests").Default("").StringVar(&serverConfig.AssumeRoleArn)
 
-	kingpin.Flag("cert", "Server certificate path").Required().ExistingFileVar(&serverConfig.TLS.ServerCert)
-	kingpin.Flag("key", "Server private key path").Required().ExistingFileVar(&serverConfig.TLS.ServerKey)
-	kingpin.Flag("ca", "CA path").Required().ExistingFileVar(&serverConfig.TLS.CA)
+	kingpin.Flag("cert", "Server certificate path").ExistingFileVar(&serverConfig.TLS.ServerCert)
+	kingpin.Flag("key", "Server private key path").ExistingFileVar(&serverConfig.TLS.ServerKey)
+	kingpin.Flag("ca", "CA path").ExistingFileVar(&serverConfig.TLS.CA)
 
 	kingpin.Flag("prometheus-listen-addr", "Prometheus HTTP listen address. e.g. localhost:9620").StringVar(&flags.prometheusListen)
 	kingpin.Flag("prometheus-sync-interval", "How frequently to update Prometheus metrics").Default("5s").DurationVar(&flags.prometheusSync)

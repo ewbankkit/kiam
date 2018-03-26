@@ -162,28 +162,35 @@ func NewServer(config *Config) (*KiamServer, error) {
 	server.manager = prefetch.NewManager(credentialsCache, server.pods, server.pods)
 	server.assumePolicy = Policies(NewRequestingAnnotatedRolePolicy(server.pods), NewNamespacePermittedRoleNamePolicy(server.namespaces, server.pods))
 
-	certificate, err := tls.LoadX509KeyPair(config.TLS.ServerCert, config.TLS.ServerKey)
-	if err != nil {
-		return nil, err
-	}
-	certPool := x509.NewCertPool()
-	if err != nil {
-		return nil, err
-	}
-	ca, err := ioutil.ReadFile(config.TLS.CA)
-	if err != nil {
-		return nil, err
-	}
-	if ok := certPool.AppendCertsFromPEM(ca); !ok {
-		return nil, fmt.Errorf("failed to append client certs")
-	}
-	creds := credentials.NewTLS(&tls.Config{
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		Certificates: []tls.Certificate{certificate},
-		ClientCAs:    certPool,
-	})
+	var grpcServer *grpc.Server
+	if config.TLS.CA != "" && config.TLS.ServerCert != "" && config.TLS.ServerKey != "" {
+		certificate, err := tls.LoadX509KeyPair(config.TLS.ServerCert, config.TLS.ServerKey)
+		if err != nil {
+			return nil, err
+		}
+		certPool := x509.NewCertPool()
+		if err != nil {
+			return nil, err
+		}
+		ca, err := ioutil.ReadFile(config.TLS.CA)
+		if err != nil {
+			return nil, err
+		}
+		if ok := certPool.AppendCertsFromPEM(ca); !ok {
+			return nil, fmt.Errorf("failed to append client certs")
+		}
+		creds := credentials.NewTLS(&tls.Config{
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			Certificates: []tls.Certificate{certificate},
+			ClientCAs:    certPool,
+		})
 
-	grpcServer := grpc.NewServer(grpc.Creds(creds))
+		grpcServer = grpc.NewServer(grpc.Creds(creds))
+	} else {
+		log.Warn("Running without gRPC security")
+		grpcServer = grpc.NewServer()
+	}
+
 	pb.RegisterKiamServiceServer(grpcServer, ServerWithTelemetry(server))
 	server.server = grpcServer
 

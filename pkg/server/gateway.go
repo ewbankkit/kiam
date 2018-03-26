@@ -18,14 +18,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io/ioutil"
+	"time"
+
 	retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
+	log "github.com/sirupsen/logrus"
 	"github.com/uswitch/kiam/pkg/aws/sts"
 	pb "github.com/uswitch/kiam/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/naming"
-	"io/ioutil"
-	"time"
 )
 
 // Client to interact with KiamServer, exposing k8s.RoleFinder and sts.CredentialsProvider interfaces
@@ -50,31 +52,38 @@ func NewGateway(address string, refresh time.Duration, caFile, certificateFile, 
 		retry.WithBackoff(retry.BackoffLinear(RetryInterval)),
 	}
 
-	certificate, err := tls.LoadX509KeyPair(certificateFile, keyFile)
-	if err != nil {
-		return nil, err
-	}
-	certPool := x509.NewCertPool()
-	ca, err := ioutil.ReadFile(caFile)
-	if err != nil {
-		return nil, err
-	}
-	if ok := certPool.AppendCertsFromPEM(ca); !ok {
-		return nil, fmt.Errorf("error appending certs from ca")
-	}
-	creds := credentials.NewTLS(&tls.Config{
-		ServerName:   address,
-		Certificates: []tls.Certificate{certificate},
-		RootCAs:      certPool,
-	})
-
 	resolver, err := naming.NewDNSResolverWithFreq(refresh)
 	if err != nil {
 		return nil, err
 	}
-
 	balancer := grpc.RoundRobin(resolver)
-	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(creds), grpc.WithUnaryInterceptor(retry.UnaryClientInterceptor(callOpts...)), grpc.WithBalancer(balancer)}
+	dialOpts := []grpc.DialOption{grpc.WithUnaryInterceptor(retry.UnaryClientInterceptor(callOpts...)), grpc.WithBalancer(balancer)}
+
+	if caFile != "" && certificateFile != "" && keyFile != "" {
+		certificate, err := tls.LoadX509KeyPair(certificateFile, keyFile)
+		if err != nil {
+			return nil, err
+		}
+		certPool := x509.NewCertPool()
+		ca, err := ioutil.ReadFile(caFile)
+		if err != nil {
+			return nil, err
+		}
+		if ok := certPool.AppendCertsFromPEM(ca); !ok {
+			return nil, fmt.Errorf("error appending certs from ca")
+		}
+		creds := credentials.NewTLS(&tls.Config{
+			ServerName:   address,
+			Certificates: []tls.Certificate{certificate},
+			RootCAs:      certPool,
+		})
+
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
+	} else {
+		log.Warn("Running without gRPC security")
+		dialOpts = append(dialOpts, grpc.WithInsecure())
+	}
+
 	conn, err := grpc.Dial(address, dialOpts...)
 	if err != nil {
 		return nil, err
